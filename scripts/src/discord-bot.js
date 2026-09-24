@@ -1,8 +1,17 @@
-import { Client, GatewayIntentBits, PermissionFlagsBits } from "discord.js";
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  Client,
+  GatewayIntentBits,
+  PermissionFlagsBits,
+} from "discord.js";
 
 // BOT_TOKEN should be stored as a Replit Secret.
 const BOT_TOKEN = process.env.BOT_TOKEN ?? "YOUR_BOT_TOKEN_HERE";
 const CHANNEL_ID = "1550646097976758333";
+const CONNECT4_CHANNEL_ID = "YOUR_CONNECT4_CHANNEL_ID_HERE";
 
 const OPEN_CHANNEL_NAME = "🟢┃hospital-open";
 const CLOSED_CHANNEL_NAME = "🔴┃hospital-closed";
@@ -10,6 +19,10 @@ const OPEN_ANNOUNCEMENT =
   "**Pinecrest International Hospital is now open! Come on in and attend today's session! 🟢**";
 const CLOSED_ANNOUNCEMENT =
   "**Pinecrest International Hospital is now closed. Thanks for attending today's session! If you missed SSU or would like another, please contact admin and we will let you know when the next one is! 🔴**";
+
+const BOARD_ROWS = 6;
+const BOARD_COLUMNS = 7;
+const games = new Map();
 
 if (BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") {
   throw new Error(
@@ -37,6 +50,441 @@ async function getStatusChannel() {
   return channel;
 }
 
+async function getConnect4Channel() {
+  if (CONNECT4_CHANNEL_ID === "YOUR_CONNECT4_CHANNEL_ID_HERE") {
+    throw new Error("Set CONNECT4_CHANNEL_ID before using !connect4.");
+  }
+
+  const channel = await client.channels.fetch(CONNECT4_CHANNEL_ID);
+
+  if (!channel || !channel.isTextBased() || !channel.guild) {
+    throw new Error(
+      `Connect 4 channel ${CONNECT4_CHANNEL_ID} was not found or is not a server text channel.`,
+    );
+  }
+
+  return channel;
+}
+
+function isModerator(member) {
+  return (
+    member?.permissions.has(PermissionFlagsBits.Administrator) ||
+    member?.permissions.has(PermissionFlagsBits.ManageGuild)
+  );
+}
+
+function createBoard() {
+  return Array.from({ length: BOARD_ROWS }, () =>
+    Array(BOARD_COLUMNS).fill(null),
+  );
+}
+
+function getPlayerColor(game, playerId) {
+  return playerId === game.player1 ? "🔴" : "🟡";
+}
+
+function getPlayerLabel(game, playerId) {
+  if (playerId === client.user?.id) return "the bot";
+  return `<@${playerId}>`;
+}
+
+function getCurrentPlayerLabel(game) {
+  return getPlayerLabel(game, game.turn);
+}
+
+function renderBoard(game) {
+  const board = game.board
+    .map((row) => row.map((cell) => cell ?? "⚪").join(" "))
+    .join("\n");
+
+  let status;
+  if (game.status === "waiting") {
+    status = `Waiting for another member to join ${getPlayerLabel(game, game.player1)}.`;
+  } else if (game.status === "finished") {
+    status = game.winner
+      ? `Winner: ${getPlayerLabel(game, game.winner)} ${getPlayerColor(game, game.winner)}`
+      : "Draw game.";
+  } else {
+    status = `Turn: ${getCurrentPlayerLabel(game)} ${getPlayerColor(game, game.turn)}`;
+  }
+
+  const opponentLine =
+    game.mode === "bot"
+      ? `Opponent: ${getPlayerLabel(game, client.user?.id)}`
+      : game.player2
+        ? `Players: ${getPlayerLabel(game, game.player1)} vs ${getPlayerLabel(game, game.player2)}`
+        : "Players: one member vs another member";
+
+  return `**Connect 4**\n${opponentLine}\n\n${board}\n\n${status}`;
+}
+
+function getLobbyComponents() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("connect4:member")
+        .setLabel("Play a member")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId("connect4:bot")
+        .setLabel("Play the bot")
+        .setStyle(ButtonStyle.Success),
+    ),
+  ];
+}
+
+function getWaitingComponents(game) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`connect4:join:${game.id}`)
+        .setLabel("Join this game")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`connect4:end:${game.id}`)
+        .setLabel("Cancel game")
+        .setStyle(ButtonStyle.Danger),
+    ),
+  ];
+}
+
+function getGameComponents(game) {
+  const dropButtons = Array.from({ length: BOARD_COLUMNS }, (_, column) =>
+    new ButtonBuilder()
+      .setCustomId(`connect4:drop:${game.id}:${column}`)
+      .setLabel(`${column + 1}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(
+        game.status !== "playing" || game.board[0][column] !== null,
+      ),
+  );
+
+  return [
+    new ActionRowBuilder().addComponents(dropButtons.slice(0, 4)),
+    new ActionRowBuilder().addComponents(dropButtons.slice(4)),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`connect4:end:${game.id}`)
+        .setLabel("End game")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(game.status === "finished"),
+    ),
+  ];
+}
+
+function findOpenRow(board, column) {
+  for (let row = BOARD_ROWS - 1; row >= 0; row -= 1) {
+    if (board[row][column] === null) return row;
+  }
+  return -1;
+}
+
+function hasWinner(board, row, column, player) {
+  const directions = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1],
+  ];
+
+  return directions.some(([rowStep, columnStep]) => {
+    let count = 1;
+
+    for (const direction of [-1, 1]) {
+      let nextRow = row + rowStep * direction;
+      let nextColumn = column + columnStep * direction;
+
+      while (
+        nextRow >= 0 &&
+        nextRow < BOARD_ROWS &&
+        nextColumn >= 0 &&
+        nextColumn < BOARD_COLUMNS &&
+        board[nextRow][nextColumn] === player
+      ) {
+        count += 1;
+        nextRow += rowStep * direction;
+        nextColumn += columnStep * direction;
+      }
+    }
+
+    return count >= 4;
+  });
+}
+
+function isBoardFull(board) {
+  return board[0].every((cell) => cell !== null);
+}
+
+function makeMove(game, column, player) {
+  const row = findOpenRow(game.board, column);
+  if (row === -1) return { row: -1, won: false, draw: false };
+
+  game.board[row][column] = player;
+  return {
+    row,
+    won: hasWinner(game.board, row, column, player),
+    draw: !hasWinner(game.board, row, column, player) && isBoardFull(game.board),
+  };
+}
+
+function chooseBotColumn(game) {
+  const available = Array.from({ length: BOARD_COLUMNS }, (_, column) =>
+    findOpenRow(game.board, column) === -1 ? null : column,
+  ).filter((column) => column !== null);
+
+  if (available.length === 0) return -1;
+
+  const botId = client.user.id;
+  const userId = game.player1;
+
+  for (const column of available) {
+    const row = findOpenRow(game.board, column);
+    game.board[row][column] = botId;
+    const wins = hasWinner(game.board, row, column, botId);
+    game.board[row][column] = null;
+    if (wins) return column;
+  }
+
+  for (const column of available) {
+    const row = findOpenRow(game.board, column);
+    game.board[row][column] = userId;
+    const blocks = hasWinner(game.board, row, column, userId);
+    game.board[row][column] = null;
+    if (blocks) return column;
+  }
+
+  const centerFirst = [...available].sort(
+    (left, right) =>
+      Math.abs(left - Math.floor(BOARD_COLUMNS / 2)) -
+      Math.abs(right - Math.floor(BOARD_COLUMNS / 2)),
+  );
+  return centerFirst[0];
+}
+
+function channelSlug(username) {
+  return (
+    username.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) ||
+    "player"
+  );
+}
+
+async function createGameChannel(interaction, mode) {
+  const guild = interaction.guild;
+  const lobbyChannel = await getConnect4Channel();
+  const gameId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const playerId = interaction.user.id;
+  const botId = client.user.id;
+  const everyoneId = guild.roles.everyone.id;
+  const waitingForMember = mode === "member";
+
+  const permissionOverwrites = [
+    {
+      id: everyoneId,
+      allow: waitingForMember ? [PermissionFlagsBits.ViewChannel] : [],
+      deny: waitingForMember
+        ? [PermissionFlagsBits.SendMessages]
+        : [PermissionFlagsBits.ViewChannel],
+    },
+    {
+      id: playerId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+      ],
+    },
+    {
+      id: botId,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ManageChannels,
+      ],
+    },
+  ];
+
+  const channel = await guild.channels.create({
+    name: `connect-4-${channelSlug(interaction.user.username)}-${gameId.slice(-4)}`,
+    type: ChannelType.GuildText,
+    parent: lobbyChannel.parentId ?? undefined,
+    permissionOverwrites,
+  });
+
+  const game = {
+    id: gameId,
+    mode,
+    status: waitingForMember ? "waiting" : "playing",
+    guildId: guild.id,
+    channelId: channel.id,
+    channel,
+    player1: playerId,
+    player2: mode === "bot" ? botId : null,
+    turn: playerId,
+    board: createBoard(),
+    winner: null,
+  };
+
+  games.set(gameId, game);
+  return game;
+}
+
+async function handleConnect4Button(interaction) {
+  const [, action, value, columnText] = interaction.customId.split(":");
+
+  if (action === "member" || action === "bot") {
+    if (!interaction.guild) {
+      await interaction.reply({
+        content: "Connect 4 games are only available inside a server.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    try {
+      const game = await createGameChannel(interaction, action === "bot" ? "bot" : "member");
+      await interaction.reply({
+        content: `Your private Connect 4 channel is ready: <#${game.channelId}>`,
+        ephemeral: true,
+      });
+      await game.channel.send({
+        content: renderBoard(game),
+        components:
+          game.status === "waiting"
+            ? getWaitingComponents(game)
+            : getGameComponents(game),
+      });
+    } catch (error) {
+      console.error("Unable to create the Connect 4 game channel.", error);
+      await interaction.reply({
+        content: "I could not create the private game channel. Check my channel permissions and try again.",
+        ephemeral: true,
+      });
+    }
+    return;
+  }
+
+  const game = games.get(value);
+  if (!game) {
+    await interaction.reply({
+      content: "That game is no longer active. Start a new one from the Connect 4 lobby.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (action === "join") {
+    if (game.status !== "waiting") {
+      await interaction.reply({ content: "That game has already started.", ephemeral: true });
+      return;
+    }
+    if (interaction.user.id === game.player1) {
+      await interaction.reply({ content: "You already created this game.", ephemeral: true });
+      return;
+    }
+
+    game.player2 = interaction.user.id;
+    game.status = "playing";
+    game.turn = game.player1;
+
+    await game.channel.permissionOverwrites.edit(game.guildId, {
+      ViewChannel: false,
+    });
+    await game.channel.permissionOverwrites.edit(game.player2, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+    });
+    await interaction.update({
+      content: renderBoard(game),
+      components: getGameComponents(game),
+    });
+    return;
+  }
+
+  if (action === "end") {
+    const canEnd =
+      interaction.user.id === game.player1 ||
+      interaction.user.id === game.player2 ||
+      isModerator(interaction.member);
+
+    if (!canEnd) {
+      await interaction.reply({
+        content: "Only the players or a server moderator can end this game.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    game.status = "finished";
+    await interaction.update({
+      content: `${renderBoard(game)}\n\n**Game ended.**`,
+      components: getGameComponents(game),
+    });
+    games.delete(game.id);
+    return;
+  }
+
+  if (action !== "drop") return;
+
+  const column = Number(columnText);
+  if (
+    game.status !== "playing" ||
+    !Number.isInteger(column) ||
+    column < 0 ||
+    column >= BOARD_COLUMNS
+  ) {
+    await interaction.reply({ content: "That move is no longer available.", ephemeral: true });
+    return;
+  }
+  if (interaction.channelId !== game.channelId) {
+    await interaction.reply({ content: "Moves must be made in the private game channel.", ephemeral: true });
+    return;
+  }
+  if (interaction.user.id !== game.turn) {
+    await interaction.reply({
+      content: `It is ${getCurrentPlayerLabel(game)}'s turn.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const currentPlayer = game.turn;
+  const move = makeMove(game, column, currentPlayer);
+
+  if (move.row === -1) {
+    await interaction.reply({ content: "That column is full. Choose another one.", ephemeral: true });
+    return;
+  }
+
+  if (move.won) {
+    game.status = "finished";
+    game.winner = currentPlayer;
+  } else if (move.draw) {
+    game.status = "finished";
+  } else if (game.mode === "bot") {
+    game.turn = client.user.id;
+    const botColumn = chooseBotColumn(game);
+    const botMove = makeMove(game, botColumn, client.user.id);
+
+    if (botMove.won) {
+      game.status = "finished";
+      game.winner = client.user.id;
+    } else if (botMove.draw) {
+      game.status = "finished";
+    } else {
+      game.turn = game.player1;
+    }
+  } else {
+    game.turn = game.turn === game.player1 ? game.player2 : game.player1;
+  }
+
+  await interaction.update({
+    content: renderBoard(game),
+    components: getGameComponents(game),
+  });
+}
+
 client.once("ready", (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
 });
@@ -47,13 +495,33 @@ client.on("messageCreate", async (message) => {
   const content = message.content.trim();
   const command = content.toLowerCase();
 
+  if (command === "!connect4") {
+    if (!isModerator(message.member)) {
+      await message.reply("Only server moderators can post the Connect 4 lobby.");
+      return;
+    }
+
+    try {
+      const channel = await getConnect4Channel();
+      await channel.send({
+        content:
+          "**Connect 4 lobby**\nChoose a game below. Your selection will open a private channel for the match.",
+        components: getLobbyComponents(),
+      });
+      if (message.deletable) await message.delete();
+    } catch (error) {
+      console.error("Unable to post the Connect 4 lobby.", error);
+      await message.reply(
+        "Set CONNECT4_CHANNEL_ID to the lobby channel ID, then restart the bot.",
+      );
+    }
+    return;
+  }
+
   if (command.startsWith("!announce")) {
     const announcement = content.slice("!announce".length).trim();
-    const isModerator =
-      message.member?.permissions.has(PermissionFlagsBits.Administrator) ||
-      message.member?.permissions.has(PermissionFlagsBits.ManageGuild);
 
-    if (!isModerator) {
+    if (!isModerator(message.member)) {
       await message.reply("Only server moderators can send official announcements.");
       return;
     }
@@ -65,9 +533,7 @@ client.on("messageCreate", async (message) => {
 
     try {
       await message.channel.send(announcement);
-      if (message.deletable) {
-        await message.delete();
-      }
+      if (message.deletable) await message.delete();
     } catch (error) {
       console.error("Unable to send the custom announcement.", error);
     }
@@ -90,6 +556,27 @@ client.on("messageCreate", async (message) => {
     await channel.send(CLOSED_ANNOUNCEMENT);
   } catch (error) {
     console.error("Unable to update the hospital status channel.", error);
+  }
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton() || !interaction.customId.startsWith("connect4:")) {
+    return;
+  }
+
+  try {
+    await handleConnect4Button(interaction);
+  } catch (error) {
+    console.error("Unable to handle a Connect 4 interaction.", error);
+    const response = {
+      content: "Something went wrong with that game action. Please try again.",
+      ephemeral: true,
+    };
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp(response);
+    } else {
+      await interaction.reply(response);
+    }
   }
 });
 
