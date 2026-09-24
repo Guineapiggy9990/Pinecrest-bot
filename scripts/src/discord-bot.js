@@ -1,7 +1,7 @@
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, PermissionFlagsBits } from "discord.js";
 
-// Replace these placeholders before starting the bot.
-const BOT_TOKEN = "MTU1MjQ2OTIyNTcyODM4NTEzNQ.GN5XsO.Q4Bj7w9U9uWf40HbUDjsTBfkB9bZbNBx0ZO9m8";
+// BOT_TOKEN should be stored as a Replit Secret.
+const BOT_TOKEN = process.env.BOT_TOKEN ?? "YOUR_BOT_TOKEN_HERE";
 const CHANNEL_ID = "1550646097976758333";
 
 const OPEN_CHANNEL_NAME = "🟢┃hospital-open";
@@ -11,9 +11,9 @@ const OPEN_ANNOUNCEMENT =
 const CLOSED_ANNOUNCEMENT =
   "**Pinecrest International Hospital is now closed. Thanks for attending today's session! If you missed SSU or would like another, please contact admin and we will let you know when the next one is! 🔴**";
 
-if (BOT_TOKEN === "YOUR_BOT_TOKEN_HERE" || CHANNEL_ID === "YOUR_CHANNEL_ID_HERE") {
+if (BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") {
   throw new Error(
-    "Replace BOT_TOKEN and CHANNEL_ID at the top of scripts/src/discord-bot.js before starting the bot.",
+    "Add BOT_TOKEN as a Replit Secret before starting the bot.",
   );
 }
 
@@ -44,7 +44,34 @@ client.once("ready", (readyClient) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  const command = message.content.trim().toLowerCase();
+  const content = message.content.trim();
+  const command = content.toLowerCase();
+
+  if (command.startsWith("!announce")) {
+    const announcement = content.slice("!announce".length).trim();
+    const isModerator =
+      message.member?.permissions.has(PermissionFlagsBits.Administrator) ||
+      message.member?.permissions.has(PermissionFlagsBits.ManageGuild);
+
+    if (!isModerator) {
+      await message.reply("Only server moderators can send official announcements.");
+      return;
+    }
+
+    if (!announcement) {
+      await message.reply("Usage: `!announce <your announcement>`");
+      return;
+    }
+
+    try {
+      const channel = await getConfiguredChannel();
+      await channel.send(announcement);
+    } catch (error) {
+      console.error("Unable to send the custom announcement.", error);
+    }
+    return;
+  }
+
   if (command !== "!open" && command !== "!close") return;
 
   try {
