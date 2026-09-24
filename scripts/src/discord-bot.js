@@ -94,7 +94,11 @@ function getCurrentPlayerLabel(game) {
 
 function renderBoard(game) {
   const board = game.board
-    .map((row) => row.map((cell) => cell ?? "⚪").join(" "))
+    .map((row) =>
+      row
+        .map((cell) => (cell === null ? "⚪" : getPlayerColor(game, cell)))
+        .join(" "),
+    )
     .join("\n");
 
   let status;
