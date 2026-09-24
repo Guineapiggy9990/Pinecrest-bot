@@ -22,6 +22,7 @@ const CLOSED_ANNOUNCEMENT =
 
 const BOARD_ROWS = 6;
 const BOARD_COLUMNS = 7;
+const GAME_END_DELAY_MS = 10_000;
 const games = new Map();
 
 if (BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") {
@@ -486,6 +487,25 @@ async function createGameChannel(interaction, mode) {
   return game;
 }
 
+async function deleteGameChannel(game, reason) {
+  games.delete(game.id);
+
+  try {
+    await game.channel.delete(reason);
+  } catch (error) {
+    console.error(`Unable to delete Connect 4 channel ${game.channelId}.`, error);
+  }
+}
+
+function scheduleGameChannelClose(game) {
+  if (game.closeScheduled) return;
+
+  game.closeScheduled = true;
+  setTimeout(() => {
+    void deleteGameChannel(game, "Connect 4 game finished");
+  }, GAME_END_DELAY_MS);
+}
+
 async function handleConnect4Button(interaction) {
   const [, action, value, columnText] = interaction.customId.split(":");
 
@@ -574,11 +594,8 @@ async function handleConnect4Button(interaction) {
     }
 
     game.status = "finished";
-    await interaction.update({
-      content: `${renderBoard(game)}\n\n**Game ended.**`,
-      components: getGameComponents(game),
-    });
-    games.delete(game.id);
+    await interaction.deferUpdate();
+    await deleteGameChannel(game, "Connect 4 game ended by a player");
     return;
   }
 
@@ -640,6 +657,10 @@ async function handleConnect4Button(interaction) {
     content: renderBoard(game),
     components: getGameComponents(game),
   });
+
+  if (game.status === "finished") {
+    scheduleGameChannelClose(game);
+  }
 }
 
 client.once("ready", (readyClient) => {
