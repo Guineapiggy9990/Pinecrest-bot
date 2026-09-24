@@ -65,6 +65,9 @@ client.on("messageCreate", async (message) => {
 
     try {
       await message.channel.send(announcement);
+      if (message.deletable) {
+        await message.delete();
+      }
     } catch (error) {
       console.error("Unable to send the custom announcement.", error);
     }
