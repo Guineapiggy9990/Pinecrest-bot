@@ -231,38 +231,191 @@ function makeMove(game, column, player) {
   };
 }
 
-function chooseBotColumn(game) {
-  const available = Array.from({ length: BOARD_COLUMNS }, (_, column) =>
-    findOpenRow(game.board, column) === -1 ? null : column,
-  ).filter((column) => column !== null);
+function getAvailableColumns(board) {
+  const center = Math.floor(BOARD_COLUMNS / 2);
 
+  return Array.from({ length: BOARD_COLUMNS }, (_, index) => index)
+    .filter((column) => findOpenRow(board, column) !== -1)
+    .sort(
+      (left, right) =>
+        Math.abs(left - center) - Math.abs(right - center),
+    );
+}
+
+function hasAnyWinner(board, player) {
+  for (let row = 0; row < BOARD_ROWS; row += 1) {
+    for (let column = 0; column < BOARD_COLUMNS; column += 1) {
+      if (board[row][column] === player && hasWinner(board, row, column, player)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function scoreWindow(window, botId, userId) {
+  const botPieces = window.filter((cell) => cell === botId).length;
+  const userPieces = window.filter((cell) => cell === userId).length;
+  const emptySpaces = window.filter((cell) => cell === null).length;
+
+  if (botPieces === 4) return 100000;
+  if (userPieces === 4) return -100000;
+  if (botPieces === 3 && emptySpaces === 1) return 120;
+  if (botPieces === 2 && emptySpaces === 2) return 15;
+  if (userPieces === 3 && emptySpaces === 1) return -150;
+  if (userPieces === 2 && emptySpaces === 2) return -20;
+  return 0;
+}
+
+function evaluateBoard(board, botId, userId) {
+  let score = 0;
+  const centerColumn = Math.floor(BOARD_COLUMNS / 2);
+
+  for (let row = 0; row < BOARD_ROWS; row += 1) {
+    if (board[row][centerColumn] === botId) score += 6;
+    if (board[row][centerColumn] === userId) score -= 6;
+  }
+
+  for (let row = 0; row < BOARD_ROWS; row += 1) {
+    for (let column = 0; column <= BOARD_COLUMNS - 4; column += 1) {
+      score += scoreWindow(
+        board[row].slice(column, column + 4),
+        botId,
+        userId,
+      );
+    }
+  }
+
+  for (let row = 0; row <= BOARD_ROWS - 4; row += 1) {
+    for (let column = 0; column < BOARD_COLUMNS; column += 1) {
+      score += scoreWindow(
+        [0, 1, 2, 3].map((offset) => board[row + offset][column]),
+        botId,
+        userId,
+      );
+    }
+  }
+
+  for (let row = 0; row <= BOARD_ROWS - 4; row += 1) {
+    for (let column = 0; column <= BOARD_COLUMNS - 4; column += 1) {
+      score += scoreWindow(
+        [0, 1, 2, 3].map((offset) => board[row + offset][column + offset]),
+        botId,
+        userId,
+      );
+    }
+  }
+
+  for (let row = 0; row <= BOARD_ROWS - 4; row += 1) {
+    for (let column = 3; column < BOARD_COLUMNS; column += 1) {
+      score += scoreWindow(
+        [0, 1, 2, 3].map((offset) => board[row + offset][column - offset]),
+        botId,
+        userId,
+      );
+    }
+  }
+
+  return score;
+}
+
+function simulateMove(board, column, player) {
+  const row = findOpenRow(board, column);
+  if (row === -1) return null;
+
+  const nextBoard = board.map((boardRow) => [...boardRow]);
+  nextBoard[row][column] = player;
+  return {
+    board: nextBoard,
+    row,
+    won: hasWinner(nextBoard, row, column, player),
+  };
+}
+
+function minimax(board, depth, alpha, beta, maximizing, botId, userId) {
+  if (hasAnyWinner(board, botId)) return 1000000 + depth;
+  if (hasAnyWinner(board, userId)) return -1000000 - depth;
+
+  const available = getAvailableColumns(board);
+  if (depth === 0 || available.length === 0) {
+    return evaluateBoard(board, botId, userId);
+  }
+
+  if (maximizing) {
+    let bestScore = -Infinity;
+
+    for (const column of available) {
+      const move = simulateMove(board, column, botId);
+      const score = minimax(
+        move.board,
+        depth - 1,
+        alpha,
+        beta,
+        false,
+        botId,
+        userId,
+      );
+      bestScore = Math.max(bestScore, score);
+      alpha = Math.max(alpha, bestScore);
+      if (beta <= alpha) break;
+    }
+
+    return bestScore;
+  }
+
+  let bestScore = Infinity;
+
+  for (const column of available) {
+    const move = simulateMove(board, column, userId);
+    const score = minimax(
+      move.board,
+      depth - 1,
+      alpha,
+      beta,
+      true,
+      botId,
+      userId,
+    );
+    bestScore = Math.min(bestScore, score);
+    beta = Math.min(beta, bestScore);
+    if (beta <= alpha) break;
+  }
+
+  return bestScore;
+}
+
+function chooseBotColumn(game) {
+  const available = getAvailableColumns(game.board);
   if (available.length === 0) return -1;
 
   const botId = client.user.id;
   const userId = game.player1;
+  const searchDepth = 5;
+  let bestColumn = available[0];
+  let bestScore = -Infinity;
 
   for (const column of available) {
-    const row = findOpenRow(game.board, column);
-    game.board[row][column] = botId;
-    const wins = hasWinner(game.board, row, column, botId);
-    game.board[row][column] = null;
-    if (wins) return column;
+    const move = simulateMove(game.board, column, botId);
+    const score = move.won
+      ? 1000000 + searchDepth
+      : minimax(
+          move.board,
+          searchDepth - 1,
+          -Infinity,
+          Infinity,
+          false,
+          botId,
+          userId,
+        );
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestColumn = column;
+    }
   }
 
-  for (const column of available) {
-    const row = findOpenRow(game.board, column);
-    game.board[row][column] = userId;
-    const blocks = hasWinner(game.board, row, column, userId);
-    game.board[row][column] = null;
-    if (blocks) return column;
-  }
-
-  const centerFirst = [...available].sort(
-    (left, right) =>
-      Math.abs(left - Math.floor(BOARD_COLUMNS / 2)) -
-      Math.abs(right - Math.floor(BOARD_COLUMNS / 2)),
-  );
-  return centerFirst[0];
+  return bestColumn;
 }
 
 function channelSlug(username) {
