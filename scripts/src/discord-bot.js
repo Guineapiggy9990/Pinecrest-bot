@@ -1,8 +1,8 @@
 import { Client, GatewayIntentBits } from "discord.js";
 
 // Replace these placeholders before starting the bot.
-const BOT_TOKEN = "YOUR_BOT_TOKEN_HERE";
-const CHANNEL_ID = "YOUR_CHANNEL_ID_HERE";
+const BOT_TOKEN = "MTU1MjQ2OTIyNTcyODM4NTEzNQ.GN5XsO.Q4Bj7w9U9uWf40HbUDjsTBfkB9bZbNBx0ZO9m8";
+const CHANNEL_ID = "1550646097976758333";
 
 const OPEN_CHANNEL_NAME = "🟢┃hospital-open";
 const CLOSED_CHANNEL_NAME = "🔴┃hospital-closed";
