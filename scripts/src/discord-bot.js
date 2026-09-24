@@ -11,7 +11,7 @@ import {
 // BOT_TOKEN should be stored as a Replit Secret.
 const BOT_TOKEN = process.env.BOT_TOKEN ?? "YOUR_BOT_TOKEN_HERE";
 const CHANNEL_ID = "1550646097976758333";
-const CONNECT4_CHANNEL_ID = "YOUR_CONNECT4_CHANNEL_ID_HERE";
+const CONNECT4_CHANNEL_ID = "1552499102082670612";
 
 const OPEN_CHANNEL_NAME = "🟢┃hospital-open";
 const CLOSED_CHANNEL_NAME = "🔴┃hospital-closed";
