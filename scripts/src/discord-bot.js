@@ -156,7 +156,7 @@ function getGameComponents(game) {
   const dropButtons = Array.from({ length: BOARD_COLUMNS }, (_, column) =>
     new ButtonBuilder()
       .setCustomId(`connect4:drop:${game.id}:${column}`)
-        .setEmoji({ name: "🔽" })
+      .setLabel(`${column + 1}`)
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(
         game.status !== "playing" || game.board[0][column] !== null,
