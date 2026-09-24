@@ -25,7 +25,7 @@ const client = new Client({
   ],
 });
 
-async function getConfiguredChannel() {
+async function getStatusChannel() {
   const channel = await client.channels.fetch(CHANNEL_ID);
 
   if (!channel || !channel.isTextBased() || typeof channel.setName !== "function") {
@@ -64,8 +64,7 @@ client.on("messageCreate", async (message) => {
     }
 
     try {
-      const channel = await getConfiguredChannel();
-      await channel.send(announcement);
+      await message.channel.send(announcement);
     } catch (error) {
       console.error("Unable to send the custom announcement.", error);
     }
@@ -75,7 +74,7 @@ client.on("messageCreate", async (message) => {
   if (command !== "!open" && command !== "!close") return;
 
   try {
-    const channel = await getConfiguredChannel();
+    const channel = await getStatusChannel();
 
     if (command === "!open") {
       await channel.setName(OPEN_CHANNEL_NAME);
