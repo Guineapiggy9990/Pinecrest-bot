@@ -9,7 +9,13 @@ import {
 } from "discord.js";
 
 // BOT_TOKEN should be stored as a Replit Secret.
-const BOT_TOKEN = process.env.BOT_TOKEN ?? "YOUR_BOT_TOKEN_HERE";
+// Render uses DISCORD_TOKEN.
+// BOT_TOKEN remains as a fallback for the old Replit setup.
+const BOT_TOKEN =
+  process.env.DISCORD_TOKEN ??
+  process.env.BOT_TOKEN ??
+  "YOUR_BOT_TOKEN_HERE";
+
 const CHANNEL_ID = "1550646097976758333";
 const CONNECT4_CHANNEL_ID = "1552499102082670612";
 
@@ -27,9 +33,10 @@ const games = new Map();
 
 if (BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") {
   throw new Error(
-    "Add BOT_TOKEN as a Replit Secret before starting the bot.",
+    "DISCORD_TOKEN environment variable is required.",
   );
 }
+
 
 const client = new Client({
   intents: [
@@ -758,4 +765,27 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(BOT_TOKEN);
+client.on("error", (error) => {
+  console.error("[Discord] Client error:", error);
+});
+
+client.on("shardError", (error) => {
+  console.error("[Discord] Gateway/shard error:", error);
+});
+
+client.on("debug", (message) => {
+  console.log("[Discord debug]", message);
+});
+
+console.log("[Discord] Starting bot...");
+console.log("[Discord] Token present:", Boolean(BOT_TOKEN));
+
+client
+  .login(BOT_TOKEN)
+  .then(() => {
+    console.log("[Discord] login() resolved.");
+  })
+  .catch((error) => {
+    console.error("[Discord] login() failed:", error);
+    process.exitCode = 1;
+  });
