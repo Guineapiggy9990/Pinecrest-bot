@@ -37,7 +37,6 @@ if (BOT_TOKEN === "YOUR_BOT_TOKEN_HERE") {
   );
 }
 
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -49,7 +48,11 @@ const client = new Client({
 async function getStatusChannel() {
   const channel = await client.channels.fetch(CHANNEL_ID);
 
-  if (!channel || !channel.isTextBased() || typeof channel.setName !== "function") {
+  if (
+    !channel ||
+    !channel.isTextBased() ||
+    typeof channel.setName !== "function"
+  ) {
     throw new Error(
       `Configured channel ${CHANNEL_ID} was not found or is not a renamable text channel.`,
     );
@@ -110,6 +113,7 @@ function renderBoard(game) {
     .join("\n");
 
   let status;
+
   if (game.status === "waiting") {
     status = `Waiting for another member to join ${getPlayerLabel(game, game.player1)}.`;
   } else if (game.status === "finished") {
@@ -161,14 +165,16 @@ function getWaitingComponents(game) {
 }
 
 function getGameComponents(game) {
-  const dropButtons = Array.from({ length: BOARD_COLUMNS }, (_, column) =>
-    new ButtonBuilder()
-      .setCustomId(`connect4:drop:${game.id}:${column}`)
-      .setLabel(`${column + 1}`)
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(
-        game.status !== "playing" || game.board[0][column] !== null,
-      ),
+  const dropButtons = Array.from(
+    { length: BOARD_COLUMNS },
+    (_, column) =>
+      new ButtonBuilder()
+        .setCustomId(`connect4:drop:${game.id}:${column}`)
+        .setLabel(`${column + 1}`)
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(
+          game.status !== "playing" || game.board[0][column] !== null,
+        ),
   );
 
   return [
@@ -188,6 +194,7 @@ function findOpenRow(board, column) {
   for (let row = BOARD_ROWS - 1; row >= 0; row -= 1) {
     if (board[row][column] === null) return row;
   }
+
   return -1;
 }
 
@@ -229,13 +236,23 @@ function isBoardFull(board) {
 
 function makeMove(game, column, player) {
   const row = findOpenRow(game.board, column);
-  if (row === -1) return { row: -1, won: false, draw: false };
+
+  if (row === -1) {
+    return {
+      row: -1,
+      won: false,
+      draw: false,
+    };
+  }
 
   game.board[row][column] = player;
+
+  const won = hasWinner(game.board, row, column, player);
+
   return {
     row,
-    won: hasWinner(game.board, row, column, player),
-    draw: !hasWinner(game.board, row, column, player) && isBoardFull(game.board),
+    won,
+    draw: !won && isBoardFull(game.board),
   };
 }
 
@@ -253,7 +270,10 @@ function getAvailableColumns(board) {
 function hasAnyWinner(board, player) {
   for (let row = 0; row < BOARD_ROWS; row += 1) {
     for (let column = 0; column < BOARD_COLUMNS; column += 1) {
-      if (board[row][column] === player && hasWinner(board, row, column, player)) {
+      if (
+        board[row][column] === player &&
+        hasWinner(board, row, column, player)
+      ) {
         return true;
       }
     }
@@ -273,6 +293,7 @@ function scoreWindow(window, botId, userId) {
   if (botPieces === 2 && emptySpaces === 2) return 15;
   if (userPieces === 3 && emptySpaces === 1) return -150;
   if (userPieces === 2 && emptySpaces === 2) return -20;
+
   return 0;
 }
 
@@ -298,7 +319,9 @@ function evaluateBoard(board, botId, userId) {
   for (let row = 0; row <= BOARD_ROWS - 4; row += 1) {
     for (let column = 0; column < BOARD_COLUMNS; column += 1) {
       score += scoreWindow(
-        [0, 1, 2, 3].map((offset) => board[row + offset][column]),
+        [0, 1, 2, 3].map(
+          (offset) => board[row + offset][column],
+        ),
         botId,
         userId,
       );
@@ -308,7 +331,9 @@ function evaluateBoard(board, botId, userId) {
   for (let row = 0; row <= BOARD_ROWS - 4; row += 1) {
     for (let column = 0; column <= BOARD_COLUMNS - 4; column += 1) {
       score += scoreWindow(
-        [0, 1, 2, 3].map((offset) => board[row + offset][column + offset]),
+        [0, 1, 2, 3].map(
+          (offset) => board[row + offset][column + offset],
+        ),
         botId,
         userId,
       );
@@ -318,7 +343,9 @@ function evaluateBoard(board, botId, userId) {
   for (let row = 0; row <= BOARD_ROWS - 4; row += 1) {
     for (let column = 3; column < BOARD_COLUMNS; column += 1) {
       score += scoreWindow(
-        [0, 1, 2, 3].map((offset) => board[row + offset][column - offset]),
+        [0, 1, 2, 3].map(
+          (offset) => board[row + offset][column - offset],
+        ),
         botId,
         userId,
       );
@@ -330,10 +357,12 @@ function evaluateBoard(board, botId, userId) {
 
 function simulateMove(board, column, player) {
   const row = findOpenRow(board, column);
+
   if (row === -1) return null;
 
   const nextBoard = board.map((boardRow) => [...boardRow]);
   nextBoard[row][column] = player;
+
   return {
     board: nextBoard,
     row,
@@ -341,11 +370,20 @@ function simulateMove(board, column, player) {
   };
 }
 
-function minimax(board, depth, alpha, beta, maximizing, botId, userId) {
+function minimax(
+  board,
+  depth,
+  alpha,
+  beta,
+  maximizing,
+  botId,
+  userId,
+) {
   if (hasAnyWinner(board, botId)) return 1000000 + depth;
   if (hasAnyWinner(board, userId)) return -1000000 - depth;
 
   const available = getAvailableColumns(board);
+
   if (depth === 0 || available.length === 0) {
     return evaluateBoard(board, botId, userId);
   }
@@ -355,6 +393,7 @@ function minimax(board, depth, alpha, beta, maximizing, botId, userId) {
 
     for (const column of available) {
       const move = simulateMove(board, column, botId);
+
       const score = minimax(
         move.board,
         depth - 1,
@@ -364,8 +403,10 @@ function minimax(board, depth, alpha, beta, maximizing, botId, userId) {
         botId,
         userId,
       );
+
       bestScore = Math.max(bestScore, score);
       alpha = Math.max(alpha, bestScore);
+
       if (beta <= alpha) break;
     }
 
@@ -376,6 +417,7 @@ function minimax(board, depth, alpha, beta, maximizing, botId, userId) {
 
   for (const column of available) {
     const move = simulateMove(board, column, userId);
+
     const score = minimax(
       move.board,
       depth - 1,
@@ -385,8 +427,10 @@ function minimax(board, depth, alpha, beta, maximizing, botId, userId) {
       botId,
       userId,
     );
+
     bestScore = Math.min(bestScore, score);
     beta = Math.min(beta, bestScore);
+
     if (beta <= alpha) break;
   }
 
@@ -395,16 +439,19 @@ function minimax(board, depth, alpha, beta, maximizing, botId, userId) {
 
 function chooseBotColumn(game) {
   const available = getAvailableColumns(game.board);
+
   if (available.length === 0) return -1;
 
   const botId = client.user.id;
   const userId = game.player1;
   const searchDepth = 5;
+
   let bestColumn = available[0];
   let bestScore = -Infinity;
 
   for (const column of available) {
     const move = simulateMove(game.board, column, botId);
+
     const score = move.won
       ? 1000000 + searchDepth
       : minimax(
@@ -428,8 +475,11 @@ function chooseBotColumn(game) {
 
 function channelSlug(username) {
   return (
-    username.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 18) ||
-    "player"
+    username
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 18) || "player"
   );
 }
 
@@ -445,7 +495,9 @@ async function createGameChannel(interaction, mode) {
   const permissionOverwrites = [
     {
       id: everyoneId,
-      allow: waitingForMember ? [PermissionFlagsBits.ViewChannel] : [],
+      allow: waitingForMember
+        ? [PermissionFlagsBits.ViewChannel]
+        : [],
       deny: waitingForMember
         ? [PermissionFlagsBits.SendMessages]
         : [PermissionFlagsBits.ViewChannel],
@@ -491,6 +543,7 @@ async function createGameChannel(interaction, mode) {
   };
 
   games.set(gameId, game);
+
   return game;
 }
 
@@ -500,7 +553,10 @@ async function deleteGameChannel(game, reason) {
   try {
     await game.channel.delete(reason);
   } catch (error) {
-    console.error(`Unable to delete Connect 4 channel ${game.channelId}.`, error);
+    console.error(
+      `Unable to delete Connect 4 channel ${game.channelId}.`,
+      error,
+    );
   }
 }
 
@@ -508,29 +564,38 @@ function scheduleGameChannelClose(game) {
   if (game.closeScheduled) return;
 
   game.closeScheduled = true;
+
   setTimeout(() => {
     void deleteGameChannel(game, "Connect 4 game finished");
   }, GAME_END_DELAY_MS);
 }
 
 async function handleConnect4Button(interaction) {
-  const [, action, value, columnText] = interaction.customId.split(":");
+  const [, action, value, columnText] =
+    interaction.customId.split(":");
 
   if (action === "member" || action === "bot") {
     if (!interaction.guild) {
       await interaction.reply({
-        content: "Connect 4 games are only available inside a server.",
+        content:
+          "Connect 4 games are only available inside a server.",
         ephemeral: true,
       });
+
       return;
     }
 
     try {
-      const game = await createGameChannel(interaction, action === "bot" ? "bot" : "member");
+      const game = await createGameChannel(
+        interaction,
+        action === "bot" ? "bot" : "member",
+      );
+
       await interaction.reply({
         content: `Your private Connect 4 channel is ready: <#${game.channelId}>`,
         ephemeral: true,
       });
+
       await game.channel.send({
         content: renderBoard(game),
         components:
@@ -539,31 +604,49 @@ async function handleConnect4Button(interaction) {
             : getGameComponents(game),
       });
     } catch (error) {
-      console.error("Unable to create the Connect 4 game channel.", error);
+      console.error(
+        "Unable to create the Connect 4 game channel.",
+        error,
+      );
+
       await interaction.reply({
-        content: "I could not create the private game channel. Check my channel permissions and try again.",
+        content:
+          "I could not create the private game channel. Check my channel permissions and try again.",
         ephemeral: true,
       });
     }
+
     return;
   }
 
   const game = games.get(value);
+
   if (!game) {
     await interaction.reply({
-      content: "That game is no longer active. Start a new one from the Connect 4 lobby.",
+      content:
+        "That game is no longer active. Start a new one from the Connect 4 lobby.",
       ephemeral: true,
     });
+
     return;
   }
 
   if (action === "join") {
     if (game.status !== "waiting") {
-      await interaction.reply({ content: "That game has already started.", ephemeral: true });
+      await interaction.reply({
+        content: "That game has already started.",
+        ephemeral: true,
+      });
+
       return;
     }
+
     if (interaction.user.id === game.player1) {
-      await interaction.reply({ content: "You already created this game.", ephemeral: true });
+      await interaction.reply({
+        content: "You already created this game.",
+        ephemeral: true,
+      });
+
       return;
     }
 
@@ -571,18 +654,27 @@ async function handleConnect4Button(interaction) {
     game.status = "playing";
     game.turn = game.player1;
 
-    await game.channel.permissionOverwrites.edit(game.guildId, {
-      ViewChannel: false,
-    });
-    await game.channel.permissionOverwrites.edit(game.player2, {
-      ViewChannel: true,
-      SendMessages: true,
-      ReadMessageHistory: true,
-    });
+    await game.channel.permissionOverwrites.edit(
+      game.guildId,
+      {
+        ViewChannel: false,
+      },
+    );
+
+    await game.channel.permissionOverwrites.edit(
+      game.player2,
+      {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+      },
+    );
+
     await interaction.update({
       content: renderBoard(game),
       components: getGameComponents(game),
     });
+
     return;
   }
 
@@ -594,39 +686,60 @@ async function handleConnect4Button(interaction) {
 
     if (!canEnd) {
       await interaction.reply({
-        content: "Only the players or a server moderator can end this game.",
+        content:
+          "Only the players or a server moderator can end this game.",
         ephemeral: true,
       });
+
       return;
     }
 
     game.status = "finished";
+
     await interaction.deferUpdate();
-    await deleteGameChannel(game, "Connect 4 game ended by a player");
+
+    await deleteGameChannel(
+      game,
+      "Connect 4 game ended by a player",
+    );
+
     return;
   }
 
   if (action !== "drop") return;
 
   const column = Number(columnText);
+
   if (
     game.status !== "playing" ||
     !Number.isInteger(column) ||
     column < 0 ||
     column >= BOARD_COLUMNS
   ) {
-    await interaction.reply({ content: "That move is no longer available.", ephemeral: true });
+    await interaction.reply({
+      content: "That move is no longer available.",
+      ephemeral: true,
+    });
+
     return;
   }
+
   if (interaction.channelId !== game.channelId) {
-    await interaction.reply({ content: "Moves must be made in the private game channel.", ephemeral: true });
+    await interaction.reply({
+      content:
+        "Moves must be made in the private game channel.",
+      ephemeral: true,
+    });
+
     return;
   }
+
   if (interaction.user.id !== game.turn) {
     await interaction.reply({
       content: `It is ${getCurrentPlayerLabel(game)}'s turn.`,
       ephemeral: true,
     });
+
     return;
   }
 
@@ -634,7 +747,12 @@ async function handleConnect4Button(interaction) {
   const move = makeMove(game, column, currentPlayer);
 
   if (move.row === -1) {
-    await interaction.reply({ content: "That column is full. Choose another one.", ephemeral: true });
+    await interaction.reply({
+      content:
+        "That column is full. Choose another one.",
+      ephemeral: true,
+    });
+
     return;
   }
 
@@ -645,8 +763,13 @@ async function handleConnect4Button(interaction) {
     game.status = "finished";
   } else if (game.mode === "bot") {
     game.turn = client.user.id;
+
     const botColumn = chooseBotColumn(game);
-    const botMove = makeMove(game, botColumn, client.user.id);
+    const botMove = makeMove(
+      game,
+      botColumn,
+      client.user.id,
+    );
 
     if (botMove.won) {
       game.status = "finished";
@@ -657,7 +780,10 @@ async function handleConnect4Button(interaction) {
       game.turn = game.player1;
     }
   } else {
-    game.turn = game.turn === game.player1 ? game.player2 : game.player1;
+    game.turn =
+      game.turn === game.player1
+        ? game.player2
+        : game.player1;
   }
 
   await interaction.update({
@@ -682,46 +808,70 @@ client.on("messageCreate", async (message) => {
 
   if (command === "!connect4") {
     if (!isModerator(message.member)) {
-      await message.reply("Only server moderators can post the Connect 4 lobby.");
+      await message.reply(
+        "Only server moderators can post the Connect 4 lobby.",
+      );
       return;
     }
 
     try {
       const channel = await getConnect4Channel();
+
       await channel.send({
         content:
           "**Connect 4 lobby**\nChoose a game below. Your selection will open a private channel for the match.",
         components: getLobbyComponents(),
       });
-      if (message.deletable) await message.delete();
+
+      if (message.deletable) {
+        await message.delete();
+      }
     } catch (error) {
-      console.error("Unable to post the Connect 4 lobby.", error);
+      console.error(
+        "Unable to post the Connect 4 lobby.",
+        error,
+      );
+
       await message.reply(
         "Set CONNECT4_CHANNEL_ID to the lobby channel ID, then restart the bot.",
       );
     }
+
     return;
   }
 
   if (command.startsWith("!announce")) {
-    const announcement = content.slice("!announce".length).trim();
+    const announcement = content
+      .slice("!announce".length)
+      .trim();
 
     if (!isModerator(message.member)) {
-      await message.reply("Only server moderators can send official announcements.");
+      await message.reply(
+        "Only server moderators can send official announcements.",
+      );
       return;
     }
 
     if (!announcement) {
-      await message.reply("Usage: `!announce <your announcement>`");
+      await message.reply(
+        "Usage: `!announce <your announcement>`",
+      );
       return;
     }
 
     try {
       await message.channel.send(announcement);
-      if (message.deletable) await message.delete();
+
+      if (message.deletable) {
+        await message.delete();
+      }
     } catch (error) {
-      console.error("Unable to send the custom announcement.", error);
+      console.error(
+        "Unable to send the custom announcement.",
+        error,
+      );
     }
+
     return;
   }
 
@@ -740,23 +890,35 @@ client.on("messageCreate", async (message) => {
     await channel.bulkDelete(5, true);
     await channel.send(CLOSED_ANNOUNCEMENT);
   } catch (error) {
-    console.error("Unable to update the hospital status channel.", error);
+    console.error(
+      "Unable to update the hospital status channel.",
+      error,
+    );
   }
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton() || !interaction.customId.startsWith("connect4:")) {
+  if (
+    !interaction.isButton() ||
+    !interaction.customId.startsWith("connect4:")
+  ) {
     return;
   }
 
   try {
     await handleConnect4Button(interaction);
   } catch (error) {
-    console.error("Unable to handle a Connect 4 interaction.", error);
+    console.error(
+      "Unable to handle a Connect 4 interaction.",
+      error,
+    );
+
     const response = {
-      content: "Something went wrong with that game action. Please try again.",
+      content:
+        "Something went wrong with that game action. Please try again.",
       ephemeral: true,
     };
+
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(response);
     } else {
@@ -769,16 +931,44 @@ client.on("error", (error) => {
   console.error("[Discord] Client error:", error);
 });
 
-client.on("shardError", (error) => {
-  console.error("[Discord] Gateway/shard error:", error);
+client.on("shardError", (error, shardId) => {
+  console.error(
+    `[Discord] Shard ${shardId ?? "unknown"} gateway error:`,
+    error,
+  );
 });
 
-client.on("debug", (message) => {
-  console.log("[Discord debug]", message);
+client.on("shardDisconnect", (event, shardId) => {
+  console.error(
+    `[Discord] Shard ${shardId} disconnected. code=${event.code} clean=${event.wasClean}`,
+  );
+});
+
+client.on("shardReconnecting", (shardId) => {
+  console.log(
+    `[Discord] Shard ${shardId} reconnecting...`,
+  );
+});
+
+client.on("shardResume", (shardId, replayedEvents) => {
+  console.log(
+    `[Discord] Shard ${shardId} resumed. replayedEvents=${replayedEvents}`,
+  );
+});
+
+process.on("unhandledRejection", (error) => {
+  console.error("[Discord] Unhandled promise rejection:", error);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[Discord] Uncaught exception:", error);
 });
 
 console.log("[Discord] Starting bot...");
-console.log("[Discord] Token present:", Boolean(BOT_TOKEN));
+console.log(
+  "[Discord] Token present:",
+  Boolean(BOT_TOKEN),
+);
 
 client
   .login(BOT_TOKEN)
@@ -789,3 +979,4 @@ client
     console.error("[Discord] login() failed:", error);
     process.exitCode = 1;
   });
+
